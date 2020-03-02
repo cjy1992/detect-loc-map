@@ -15,6 +15,7 @@ import tensorflow as tf
 import time
 import collections
 import cv2
+import pickle
 
 import gym
 import gym_carla
@@ -196,6 +197,11 @@ def compute_summaries(metrics,
 
   # shape of images is [[images in episode as timesteps]]
   if images:
+    get_eval_metrics(images, latents, model_net, pixor_size=pixor_size, ap_range=[0.1,0.3,0.5,0.7,0.9])
+    
+    images = images[:num_episodes_to_render]
+    latens = latents[:num_episodes_to_render]
+
     if type(images[0][0]) is collections.OrderedDict:
       videos = pad_and_concatenate_videos(images, image_keys=image_keys, is_dict=True)
       videos_bb = pad_and_concatenate_bb_videos(images, is_dict=True, pixor_size=pixor_size)
@@ -228,18 +234,235 @@ def compute_summaries(metrics,
     bb = tf.concat([videos_bb, reconstruct_bb_images], axis=-2)
     gif_summary('bbVideoEvalPolicy', bb, 1, fps)    
 
+
     # gif_summary('ObservationBBVideoEvalPolicy', videos_bb, 1, fps)
     # gif_summary('ReconstructedVideoBBEvalPolicy', reconstruct_bb_images, 1, fps)
 
 
-def get_eval_metrics(images, latents, model_net):
+def get_eval_lists(images, latents, model_net, pixor_size=128):
+  gt_boxes_list = []
+  corners_list = []
+  scores_list = []
+  gt_pixor_state_list = []
+  recons_pixor_state_list = []
   for i in range(len(latents)):
     latent_eps = latents[i]
     image_eps = images[i]
     for j in range(len(latent_eps)):
       latent = latent_eps[j]
-      image_dict = image_eps[j]
+      dict_obs = image_eps[j]
+      dict_recons = model_net.reconstruct_pixor(latent)
+
+      vh_clas_recons = tf.squeeze(dict_recons['vh_clas'], axis=-1)  # (B,H,W,1)
+      vh_regr_recons = dict_recons['vh_regr']  # (B,H,W,6)
+      decoded_reg_recons = decode_reg(vh_regr_recons, pixor_size)  # (B,H,W,8)      
+      pixor_state_recons = dict_recons['pixor_state']
+
+      vh_clas_obs = tf.squeeze(dict_obs['vh_clas'], axis=-1)  # (B,H,W,1)
+      vh_regr_obs = dict_obs['vh_regr']  # (B,H,W,6)
+      decoded_reg_obs = decode_reg(vh_regr_obs, pixor_size)  # (B,H,W,8)
+      pixor_state_obs = dict_obs['pixor_state']
+
+      B = vh_regr_obs.shape[0]
+      for k in range(B):
+        gt_boxes, _ = pixor_postprocess(vh_clas_obs[k], decoded_reg_obs[k])
+        corners, scores = pixor_postprocess(vh_clas_recons[k], decoded_reg_recons[k])  # (N,4,2)      
+        gt_boxes_list.append(gt_boxes)
+        corners_list.append(corners)
+        scores_list.append(scores)
+        gt_pixor_state_list.append(pixor_state_obs[k])
+        recons_pixor_state_list.append(pixor_state_recons[k])
+  return gt_boxes_list, corners_list, scores_list, gt_pixor_state_list, recons_pixor_state_list
+
+
+def get_eval_metrics(images, latents, model_net, pixor_size=128, ap_range=[0.3,0.5,0.7]):
+  gt_boxes_list, corners_list, scores_list, gt_pixor_state_list, recons_pixor_state_list \
+    = get_eval_lists(images, latents, model_net, pixor_size=pixor_size)
+
+  N = len(gt_boxes_list)  
+
+  APs = {}
+  precisions = {}
+  recalls = {}
+  for ap in ap_range:
+    gts = 0
+    preds = 0
+    all_scores = []
+    all_matches = []
+    for i in range(N):
+      gt_boxes = gt_boxes_list[i]
+      corners = corners_list[i]
+      scores = scores_list[i]
+      gt_match, pred_match, overlaps = compute_matches(gt_boxes,
+                                        corners, scores, iou_threshold=ap)
+      num_gt = gt_boxes.shape[0]
+      num_pred = len(scores)
       
+      gts += num_gt
+      preds += num_pred
+      all_scores.extend(list(scores))
+      all_matches.extend(list(pred_match))
+  
+    all_scores = np.array(all_scores)
+    all_matches = np.array(all_matches)
+    sort_ids = np.argsort(all_scores)
+    all_matches = all_matches[sort_ids[::-1]]
+
+    if gts == 0 or preds == 0:
+      return
+
+    AP, precision, recall, p, r = compute_ap(all_matches, gts, preds)
+    print('ap', ap)
+    print('precision', p)
+    print('recall', r)
+    APs[ap] = AP
+    precisions[ap] = precision
+    recalls[ap] = recall   
+  
+  results = {}
+  results['APs'] = APs
+  results['precisions'] = precisions
+  results['recalls'] = recalls  
+
+  error_position = []
+  error_heading = []
+  error_velocity = []
+  for i in range(N):
+    gt_pixor_state = gt_pixor_state_list[i]
+    recons_pixor_state = recons_pixor_state_list[i]
+    x0, y0, cos0, sin0, v0 = gt_pixor_state
+    x, y, cos, sin, v = recons_pixor_state
+    error_position.append(np.sqrt((x-x0)**2+(y-y0)**2))
+    yaw0 = np.arctan2(sin0, cos0)
+    cos0 = np.cos(yaw0)
+    sin0 = np.sin(yaw0)
+    yaw = np.arctan2(sin, cos)
+    cos = np.cos(yaw)
+    sin = np.sin(yaw)
+    error_heading.append(np.arccos(np.dot([cos,sin],[cos0,sin0])))
+    error_velocity.append(abs(v-v0))
+  
+  results['error_position'] = np.mean(error_position)
+  results['error_heading'] = np.mean(error_heading)
+  results['error_velocity'] = np.mean(error_velocity)
+  results['std_position'] = np.std(error_position)
+  results['std_heading'] = np.std(error_heading)
+  results['std_velocity'] = np.std(error_velocity)
+
+  filename = '128_norecons61'
+  path = os.path.join('results', filename)
+
+  with open(path, 'wb') as f:
+    pickle.dump(results, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+
+def compute_matches(gt_boxes,
+                    pred_boxes, pred_scores,
+                    iou_threshold=0.5, score_threshold=0.0):
+  """Finds matches between prediction and ground truth instances.
+  Returns:
+        gt_match: 1-D array. For each GT box it has the index of the matched
+                  predicted box.
+        pred_match: 1-D array. For each predicted box, it has the index of
+                    the matched ground truth box.
+        overlaps: [pred_boxes, gt_boxes] IoU overlaps.
+  """
+
+  if len(pred_scores) == 0:
+    return -1 * np.ones([gt_boxes.shape[0]]), np.array([]), np.array([])
+
+  gt_class_ids = np.ones(len(gt_boxes), dtype=int)
+  pred_class_ids = np.ones(len(pred_scores), dtype=int)
+
+  # Sort predictions by score from high to low
+  indices = np.argsort(pred_scores)[::-1]
+  pred_boxes = pred_boxes[indices]
+  pred_class_ids = pred_class_ids[indices]
+  pred_scores = pred_scores[indices]
+
+  # Compute IoU overlaps [pred_boxes, gt_boxes]
+  overlaps = compute_overlaps(pred_boxes, gt_boxes)
+
+  # Loop through predictions and find matching ground truth boxes
+  match_count = 0
+  pred_match = -1 * np.ones([pred_boxes.shape[0]])
+  gt_match = -1 * np.ones([gt_boxes.shape[0]])
+  for i in range(len(pred_boxes)):
+    # Find best matching ground truth box
+    # 1. Sort matches by score
+    sorted_ixs = np.argsort(overlaps[i])[::-1]
+    # 2. Remove low scores
+    low_score_idx = np.where(overlaps[i, sorted_ixs] < score_threshold)[0]
+    if low_score_idx.size > 0:
+      sorted_ixs = sorted_ixs[:low_score_idx[0]]
+    # 3. Find the match
+    for j in sorted_ixs:
+      # If ground truth box is already matched, go to next one
+      if gt_match[j] > 0:
+        continue
+      # If we reach IoU smaller than the threshold, end the loop
+      iou = overlaps[i, j]
+      if iou < iou_threshold:
+        break
+      # Do we have a match?
+      if pred_class_ids[i] == gt_class_ids[j]:
+        match_count += 1
+        gt_match[j] = i
+        pred_match[i] = j
+        break
+
+  return gt_match, pred_match, overlaps
+
+
+def compute_overlaps(boxes1, boxes2):
+  """Computes IoU overlaps between two sets of boxes.
+  boxes1, boxes2: a np array of boxes
+  For better performance, pass the largest set first and the smaller second.
+  :return: a matrix of overlaps [boxes1 count, boxes2 count]
+  """
+  # Compute overlaps to generate matrix [boxes1 count, boxes2 count]
+  # Each cell contains the IoU value.
+
+  boxes1 = convert_format(boxes1)
+  boxes2 = convert_format(boxes2)
+  overlaps = np.zeros((len(boxes1), len(boxes2)))
+  for i in range(overlaps.shape[1]):
+    box2 = boxes2[i]
+    overlaps[:, i] = compute_iou(box2, boxes1)
+  return overlaps
+
+
+def compute_ap(pred_match, num_gt, num_pred):
+
+  assert num_gt != 0
+  assert num_pred != 0
+  tp = (pred_match > -1).sum()
+  # Compute precision and recall at each prediction box step
+  precisions = np.cumsum(pred_match > -1) / (np.arange(num_pred) + 1)
+  recalls = np.cumsum(pred_match > -1).astype(np.float32) / num_gt
+
+  # print(pred_match)
+  # print(num_pred)
+  # print(num_gt)
+
+  # Pad with start and end values to simplify the math
+  # precisions = np.concatenate([[0], precisions, [0]])
+  # recalls = np.concatenate([[0], recalls, [1]])
+
+  # Ensure precision values decrease but don't increase. This way, the
+  # precision value at each recall threshold is the maximum it can be
+  # for all following recall thresholds, as specified by the VOC paper.
+  for i in range(len(precisions) - 2, -1, -1):
+    precisions[i] = np.maximum(precisions[i], precisions[i + 1])
+
+  # Compute mean AP over recall range
+  indices = np.where(recalls[:-1] != recalls[1:])[0] + 1
+  mAP = np.sum((recalls[indices] - recalls[indices - 1]) *
+                 precisions[indices])
+  precision = tp / num_pred
+  recall = tp / num_gt
+  return mAP, precisions, recalls, precision, recall
 
 
 def pad_and_concatenate_videos(videos, image_keys, is_dict=False):
@@ -406,7 +629,7 @@ def decode_reg(vh_regr, pixor_size=128):
   return decoded_reg
 
 
-def pixor_postprocess(vh_clas, decoded_reg, cls_threshold=0.5):
+def pixor_postprocess(vh_clas, decoded_reg, cls_threshold=0.6):
   """Return bounding-box image with shape (H, W, 3).
     
     vh_clas: (H, W) tensor
@@ -416,7 +639,7 @@ def pixor_postprocess(vh_clas, decoded_reg, cls_threshold=0.5):
   num_boxes = int(activation.sum())
 
   if num_boxes == 0:  # No bounding boxes
-    return [], []
+    return np.array([]), []
 
   corners = tf.boolean_mask(decoded_reg, activation)  # (N,8)
   corners = tf.reshape(corners, (-1, 4, 2)).numpy()  # (N,4,2)
@@ -686,11 +909,11 @@ def train_eval(
       eval_policy,
       train_step=global_step,
       summary_writer=summary_writer,
-      num_episodes=1,
-      num_episodes_to_render=1,
+      num_episodes=num_eval_episodes,
+      num_episodes_to_render=num_images_per_summary,
       model_net=model_net,
       fps=10,
-      image_keys=['camera', 'lidar', 'roadmap'],
+      image_keys=['camera', 'lidar'],
       pixor_size=pixor_size)
 
     # Dataset generates trajectories with shape [Bxslx...]
@@ -732,7 +955,7 @@ def train_eval(
           num_episodes_to_render=num_images_per_summary,
           model_net=model_net,
           fps=10,
-          image_keys=['camera', 'lidar', 'roadmap'],
+          image_keys=['camera', 'lidar'],
           pixor_size=pixor_size)
 
       # Save checkpoints

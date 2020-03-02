@@ -5,6 +5,7 @@ __pycache__/
 .DS_*
 logs/
 videos/
+results/
 
 # C extensions
 *.so
