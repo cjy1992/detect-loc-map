@@ -1,3 +1,7 @@
+# Copyright (c) 2020: Jianyu Chen (jianyuchen@berkeley.edu).
+#
+# This work is licensed under the terms of the MIT license.
+# For a copy, see <https://opensource.org/licenses/MIT>.
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -17,8 +21,7 @@ EPS = 1e-8
 
 
 class PixorDecoder64(tf.Module):
-  """Probabilistic decoder for `p(x_t | z_t)`.
-  """
+  """Decoder from latent to PIXOR outputs."""
 
   def __init__(self, base_depth, name=None):
     super(PixorDecoder64, self).__init__(name=name)
@@ -69,8 +72,7 @@ class PixorDecoder64(tf.Module):
 
 
 class PixorDecoder128(tf.Module):
-  """Probabilistic decoder for `p(x_t | z_t)`.
-  """
+  """Decoder from latent to PIXOR outputs."""
 
   def __init__(self, base_depth, name=None):
     super(PixorDecoder128, self).__init__(name=name)
@@ -180,15 +182,6 @@ class PixorSLMHierarchical(
     # features = sum(features.values())
     features = tf.concat(list(features.values()), axis=-1)
     return features
-
-  # def reconstruct(self, latent):
-  #   latent1 = tf.gather(latent, tf.range(0, self.latent1_size), axis=-1)
-  #   latent2 = tf.gather(latent, tf.range(self.latent1_size, self.latent_size), axis=-1)
-  #   posterior_images = {}
-  #   for name in self.reconstruct_names:
-  #     posterior_images[name] = self.decoders[name](latent1, latent2).mean()
-  #   # posterior_images = tf.concat(list(posterior_images.values()), axis=-2)
-  #   return posterior_images
 
   def reconstruct_pixor(self, latent):
     vh_clas, vh_regr, pixor_state = self.pixor_decoder(latent)
@@ -344,131 +337,4 @@ class PixorSLMHierarchical(
       'posterior_images': posterior_images,
     })
 
-    return loss, outputs
-
-
-@gin.configurable
-class PixorSLMNonHierarchical(
-sequential_latent_network.SequentialLatentModelNonHierarchical):
-
-  def __init__(self,
-               input_names,
-               mask_names,
-               pixor_names,
-               obs_size=64,
-               pixor_size=64,
-               base_depth=32,
-               latent_size=64,
-               kl_analytic=True,
-               decoder_stddev=np.sqrt(0.1, dtype=np.float32),
-               name=None):
-    super(PixorSLMNonHierarchical, self).__init__(
-      input_names=input_names,
-      mask_names=mask_names,
-      obs_size=obs_size,
-      base_depth=base_depth,
-      latent_size=latent_size,
-      kl_analytic=kl_analytic,
-      decoder_stddev=decoder_stddev,
-      name=name)
-    self.pixor_names = pixor_names
-
-    for name in pixor_names:
-      if name == 'vh_clas':
-        self.decoders[name] = Decoder64(base_depth, channels=1, scale=decoder_stddev)
-      elif name == 'vh_regr':
-        self.decoders[name] = Decoder64(base_depth, channels=6, scale=decoder_stddev)
-      else:
-        raise NotImplementedError
-
-  def compute_loss(self, images, actions, step_types, latent_posterior_samples_and_dists=None):
-    sequence_length = step_types.shape[1] - 1
-
-    if latent_posterior_samples_and_dists is None:
-      latent_posterior_samples_and_dists = self.sample_posterior(images, actions, step_types)
-    latent_posterior_samples, latent_posterior_dists = latent_posterior_samples_and_dists
-    latent_prior_samples, _ = self.sample_prior_or_posterior(actions, step_types)  # for visualization
-
-    first_image = {}
-    num_first_image = 3
-    for k,v in images.items():
-      first_image[k] = v[:, :num_first_image]
-    latent_conditional_prior_samples, _ = self.sample_prior_or_posterior(
-        actions, step_types, images=first_image)  # for visualization. condition on first image only
-
-    def where_and_concat(reset_masks, first_prior_tensors, after_first_prior_tensors):
-      after_first_prior_tensors = tf.where(reset_masks[:, 1:], first_prior_tensors[:, 1:], after_first_prior_tensors)
-      prior_tensors = tf.concat([first_prior_tensors[:, 0:1], after_first_prior_tensors], axis=1)
-      return prior_tensors
-
-    reset_masks = tf.concat([tf.ones_like(step_types[:, 0:1], dtype=tf.bool),
-                             tf.equal(step_types[:, 1:], ts.StepType.FIRST)], axis=1)
-
-    latent_reset_masks = tf.tile(reset_masks[:, :, None], [1, 1, self.latent_size])
-    latent_first_prior_dists = self.latent_first_prior(step_types)
-    # these distributions start at t=1 and the inputs are from t-1
-    latent_after_first_prior_dists = self.latent_prior(
-        latent_posterior_samples[:, :sequence_length], actions[:, :sequence_length])
-    latent_prior_dists = nest_utils.map_distribution_structure(
-        functools.partial(where_and_concat, latent_reset_masks),
-        latent_first_prior_dists,
-        latent_after_first_prior_dists)
-
-    outputs = {}
-
-    if self.kl_analytic:
-      latent_kl_divergences = tfd.kl_divergence(latent_posterior_dists, latent_prior_dists)
-    else:
-      latent_kl_divergences = (latent_posterior_dists.log_prob(latent_posterior_samples)
-                                - latent_prior_dists.log_prob(latent_posterior_samples))
-    latent_kl_divergences = tf.reduce_sum(latent_kl_divergences, axis=1)
-    outputs.update({
-      'latent_kl_divergence': tf.reduce_mean(latent_kl_divergences),
-    })
-
-    # Compute the loss
-    elbo = - latent_kl_divergences
-
-    likelihood_dists = {}
-    likelihood_log_probs = {}
-    reconstruction_error = {}
-    for name in self.input_names+self.mask_names+self.pixor_names:
-      likelihood_dists[name] = self.decoders[name](latent_posterior_samples)
-      images_tmp = tf.image.convert_image_dtype(images[name], tf.float32)
-      likelihood_log_probs[name] = likelihood_dists[name].log_prob(images_tmp)
-      likelihood_log_probs[name] = tf.reduce_sum(likelihood_log_probs[name], axis=1)
-      reconstruction_error[name] = tf.reduce_sum(tf.square(images_tmp - likelihood_dists[name].distribution.loc),
-                                         axis=list(range(-len(likelihood_dists[name].event_shape), 0)))
-      reconstruction_error[name] = tf.reduce_sum(reconstruction_error[name], axis=1)
-      outputs.update({
-        'log_likelihood_'+name: tf.reduce_mean(likelihood_log_probs[name]),
-        'reconstruction_error_'+name: tf.reduce_mean(reconstruction_error[name]),
-      })
-      elbo += likelihood_log_probs[name]
-
-    # average over the batch dimension
-    loss = -tf.reduce_mean(elbo)
-
-    # Save the images
-    posterior_images = {}
-    prior_images = {}
-    conditional_prior_images = {}
-    for name in self.input_names+self.mask_names:
-      posterior_images[name] = likelihood_dists[name].mean()
-      prior_images[name] = self.decoders[name](latent_prior_samples).mean()
-      conditional_prior_images[name] = self.decoders[name](latent_conditional_prior_samples).mean()
-
-    images = tf.concat([images[k] for k in self.input_names+self.mask_names], axis=-2)
-    images = tf.image.convert_image_dtype(images, tf.float32)
-    posterior_images = tf.concat(list(posterior_images.values()), axis=-2)
-    prior_images = tf.concat(list(prior_images.values()), axis=-2)
-    conditional_prior_images = tf.concat(list(conditional_prior_images.values()), axis=-2)
-
-    outputs.update({
-      'elbo': tf.reduce_mean(elbo),
-      'images': images,
-      'posterior_images': posterior_images,
-      'prior_images': prior_images,
-      'conditional_prior_images': conditional_prior_images,
-    })
     return loss, outputs

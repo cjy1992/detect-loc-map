@@ -1,20 +1,10 @@
-# coding=utf-8
-# Copyright 2018 The TF-Agents Authors.
+# Copyright (c) 2020: Jianyu Chen (jianyuchen@berkeley.edu).
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# This work is licensed under the terms of the MIT license.
+# For a copy, see <https://opensource.org/licenses/MIT>.
 
-"""Actor Policy based on an actor network.
-This is used in e.g. actor-critic algorithms like DDPG.
+"""Actor policy and perform autonomous driving perception,
+and make decisions based on state observation. 
 """
 
 from __future__ import absolute_import
@@ -49,6 +39,7 @@ class PerceptionStatePolicy(tf_policy.Base):
     Args:
       time_step_spec: A `TimeStep` spec of the expected time_steps.
       action_spec: A nest of BoundedTensorSpec representing the actions.
+      actor_network: The actor network to generate actions.
       model_network: The sequential latent model to infer latent states.
       collect: Whether this is a collect policy.
       clip: Whether to clip actions to spec before returning them.  Default
@@ -56,8 +47,6 @@ class PerceptionStatePolicy(tf_policy.Base):
         continuous actions for training.
       name: The name of this policy. All variables in this module will fall
         under that name. Defaults to the class name.
-    Raises:
-      ValueError: if actor_network is not of type network.Network.
     """
     self._state_based_actor_network = actor_network
     self._model_network = model_network

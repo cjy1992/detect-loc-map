@@ -1,3 +1,7 @@
+# Copyright (c) 2020: Jianyu Chen (jianyuchen@berkeley.edu).
+#
+# This work is licensed under the terms of the MIT license.
+# For a copy, see <https://opensource.org/licenses/MIT>.
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -17,7 +21,7 @@ from sequential_latent_model.utils import nest_utils
 
 @gin.configurable
 class PerceptionAgent(tf_agent.TFAgent):
-  """TF agent with a sequential latent model and inner SAC agent."""
+  """Agent with perception system."""
   
   def __init__(self,
                time_step_spec,
@@ -58,12 +62,6 @@ class PerceptionAgent(tf_agent.TFAgent):
         train_step_counter=train_step_counter,
         )
 
-  def _experience_to_transitions(self, experience):
-    transitions = trajectory.to_transition(experience)
-    time_steps, policy_steps, next_time_steps = transitions
-    actions = policy_steps.action
-    return time_steps, actions, next_time_steps
-
   def _train(self, experience, weights=None):
     with tf.GradientTape() as tape:
       images = experience.observation
@@ -87,7 +85,6 @@ class PerceptionAgent(tf_agent.TFAgent):
     total_loss = model_loss
 
     return tf_agent.LossInfo(loss=total_loss, extra=())
-
 
   def _apply_gradients(self, gradients, variables, optimizer):
     grads_and_vars = list(zip(gradients, variables))

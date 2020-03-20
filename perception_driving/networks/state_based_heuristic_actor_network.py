@@ -1,5 +1,10 @@
+# Copyright (c) 2020: Jianyu Chen (jianyuchen@berkeley.edu).
+#
+# This work is licensed under the terms of the MIT license.
+# For a copy, see <https://opensource.org/licenses/MIT>.
+
 import gin
-import tensorflow as tf  # pylint: disable=g-explicit-tensorflow-version-import
+import tensorflow as tf
 
 from tf_agents.networks import network
 from tf_agents.networks import utils
@@ -8,37 +13,21 @@ from tf_agents.utils import common
 
 @gin.configurable
 class StateBasedHeuristicActorNetwork(network.Network):
-  """Creates an actor network."""
+  """A heuristic actor network for autonomous vehicle."""
 
   def __init__(self,
                input_tensor_spec,
                output_tensor_spec,
                desired_speed = 8,
                name='StateBasedHeuristicActorNetwork'):
-    """Creates an instance of `MlpNetwork`.
+    """Creates an instance of `StateBasedHeuristicActorNetwork`.
     Args:
       input_tensor_spec: A nest of `tensor_spec.TensorSpec` representing the
         inputs.
       output_tensor_spec: A nest of `tensor_spec.BoundedTensorSpec` representing
         the outputs.
-      fc_layer_params: Optional list of fully_connected parameters, where each
-        item is the number of units in the layer.
-      dropout_layer_params: Optional list of dropout layer parameters, each item
-        is the fraction of input units to drop or a dictionary of parameters
-        according to the keras.Dropout documentation. The additional parameter
-        `permanent', if set to True, allows to apply dropout at inference for
-        approximated Bayesian inference. The dropout layers are interleaved with
-        the fully connected layers; there is a dropout layer after each fully
-        connected layer, except if the entry in the list is None. This list must
-        have the same length of fc_layer_params, or be None.
-      conv_layer_params: Optional list of convolution layers parameters, where
-        each item is a length-three tuple indicating (filters, kernel_size,
-        stride).
-      activation_fn: Activation function, e.g. tf.nn.relu, slim.leaky_relu, ...
+      desired_speed: The desired speed of the vehicle to track.
       name: A string representing name of the network.
-    Raises:
-      ValueError: If `input_tensor_spec` or `action_spec` contains more than one
-        item, or if the action data type is not `float`.
     """
 
     super(StateBasedHeuristicActorNetwork, self).__init__(
