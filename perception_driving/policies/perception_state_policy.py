@@ -25,7 +25,7 @@ from tf_agents.trajectories import policy_step
 
 @gin.configurable
 class PerceptionStatePolicy(tf_policy.Base):
-  """Class to build Actor Policies."""
+  """Actor policy for autonomous driving perception and decision."""
 
   def __init__(self,
                time_step_spec,
@@ -35,7 +35,7 @@ class PerceptionStatePolicy(tf_policy.Base):
                collect=True,
                clip=True,
                name=None):
-    """Builds an Actor Policy given a actor network.
+    """Creates an instance of `PerceptionStatePolicy`.
     Args:
       time_step_spec: A `TimeStep` spec of the expected time_steps.
       action_spec: A nest of BoundedTensorSpec representing the actions.

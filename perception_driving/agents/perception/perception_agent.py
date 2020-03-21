@@ -46,6 +46,7 @@ class PerceptionAgent(tf_agent.TFAgent):
     self._train_step_counter = train_step_counter
     self._fps = fps
 
+    # Build the policy
     policy = perception_state_policy.PerceptionStatePolicy(
       time_step_spec=time_step_spec,
       action_spec=action_spec,
@@ -63,6 +64,7 @@ class PerceptionAgent(tf_agent.TFAgent):
         )
 
   def _train(self, experience, weights=None):
+    # Train to minimize model loss
     with tf.GradientTape() as tape:
       images = experience.observation
       model_loss = self.model_loss(

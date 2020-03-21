@@ -23,7 +23,7 @@ EPS = 1e-8
 class PixorDecoder64(tf.Module):
   """Decoder from latent to PIXOR outputs."""
 
-  def __init__(self, base_depth, name=None):
+  def __init__(self, base_depth, reconstruct_pixor_state=True, name=None):
     super(PixorDecoder64, self).__init__(name=name)
     conv_transpose = functools.partial(
         tf.keras.layers.Conv2DTranspose, padding="SAME", activation=tf.nn.leaky_relu)
@@ -36,9 +36,12 @@ class PixorDecoder64(tf.Module):
         1, 5, 2, padding="SAME", activation=tf.nn.sigmoid)
     self.conv_transpose_reg = conv_transpose(6, 5, 2)
 
-    self.dense1 = tf.keras.layers.Dense(256, activation=tf.nn.leaky_relu)
-    self.dense2 = tf.keras.layers.Dense(256, activation=tf.nn.leaky_relu)
-    self.state_output_layer = tf.keras.layers.Dense(5)
+    if reconstruct_pixor_state:
+      self.dense1 = tf.keras.layers.Dense(256, activation=tf.nn.leaky_relu)
+      self.dense2 = tf.keras.layers.Dense(256, activation=tf.nn.leaky_relu)
+      self.state_output_layer = tf.keras.layers.Dense(5)
+
+    self.reconstruct_pixor_state = reconstruct_pixor_state
 
   def __call__(self, *inputs):
     if len(inputs) > 1:
@@ -64,17 +67,21 @@ class PixorDecoder64(tf.Module):
         [tf.shape(latent)[:-1], tf.shape(vh_regr)[1:]], axis=0)
     vh_regr = tf.reshape(vh_regr, expanded_shape_reg)  # (sample, N, T, h, w, 6)
 
-    pixor_state = self.dense1(latent)
-    pixor_state = self.dense2(pixor_state)
-    pixor_state = self.state_output_layer(pixor_state)  # (..., 5)
+    pixor = (vh_clas, vh_regr)
 
-    return vh_clas, vh_regr, pixor_state
+    if self.reconstruct_pixor_state:
+      pixor_state = self.dense1(latent)
+      pixor_state = self.dense2(pixor_state)
+      pixor_state = self.state_output_layer(pixor_state)  # (..., 5)
+      pixor = (vh_clas, vh_regr, pixor_state)
+
+    return pixor
 
 
 class PixorDecoder128(tf.Module):
   """Decoder from latent to PIXOR outputs."""
 
-  def __init__(self, base_depth, name=None):
+  def __init__(self, base_depth, reconstruct_pixor_state=True, name=None):
     super(PixorDecoder128, self).__init__(name=name)
     conv_transpose = functools.partial(
         tf.keras.layers.Conv2DTranspose, padding="SAME", activation=tf.nn.leaky_relu)
@@ -88,9 +95,12 @@ class PixorDecoder128(tf.Module):
         1, 5, 2, padding="SAME", activation=tf.nn.sigmoid)
     self.conv_transpose_reg = conv_transpose(6, 5, 2)
 
-    self.dense1 = tf.keras.layers.Dense(256, activation=tf.nn.leaky_relu)
-    self.dense2 = tf.keras.layers.Dense(256, activation=tf.nn.leaky_relu)
-    self.state_output_layer = tf.keras.layers.Dense(5)
+    if reconstruct_pixor_state:
+      self.dense1 = tf.keras.layers.Dense(256, activation=tf.nn.leaky_relu)
+      self.dense2 = tf.keras.layers.Dense(256, activation=tf.nn.leaky_relu)
+      self.state_output_layer = tf.keras.layers.Dense(5)
+
+    self.reconstruct_pixor_state = reconstruct_pixor_state
 
   def __call__(self, *inputs):
     if len(inputs) > 1:
@@ -117,11 +127,15 @@ class PixorDecoder128(tf.Module):
         [tf.shape(latent)[:-1], tf.shape(vh_regr)[1:]], axis=0)
     vh_regr = tf.reshape(vh_regr, expanded_shape_reg)  # (sample, N, T, h, w, 6)
 
-    pixor_state = self.dense1(latent)
-    pixor_state = self.dense2(pixor_state)
-    pixor_state = self.state_output_layer(pixor_state)  # (..., 5)
+    pixor = (vh_clas, vh_regr)
 
-    return vh_clas, vh_regr, pixor_state
+    if self.reconstruct_pixor_state:
+      pixor_state = self.dense1(latent)
+      pixor_state = self.dense2(pixor_state)
+      pixor_state = self.state_output_layer(pixor_state)  # (..., 5)
+      pixor = (vh_clas, vh_regr, pixor_state)
+
+    return pixor
 
 
 def focal_loss(pred, label, alpha=0.25, gamma=2.0):
@@ -143,18 +157,35 @@ def smoothL1_loss(pred, label):
 @gin.configurable
 class PixorSLMHierarchical(
   sequential_latent_network.SequentialLatentModelHierarchical):
+  """The sequential latent model that also reconstruct PIXOR outputs."""
 
   def __init__(self,
                input_names,
                reconstruct_names,
                obs_size=64,
                pixor_size=64,
+               reconstruct_pixor_state=True,
                base_depth=32,
                latent1_size=32,
                latent2_size=256,
                kl_analytic=True,
                decoder_stddev=np.sqrt(0.1, dtype=np.float32),
                name=None):
+    """Creates an instance of `PixorSLMHierarchical`.
+    Args:
+      input_names: the names of the observation inputs (e.g, 'camera', 'lidar').
+      reconstruct_names: names of the outputs to reconstruct (e.g, 'mask').
+      obs_size: the pixel size of the observation inputs. Here we assume
+        the image inputs have same width and height.
+      pixor_size: the pixel size of the PIXOR outputs. Here we assume
+        the images have same width and height.
+      base_depth: base depth of the convolutional layers.
+      latent1_size: size of the first latent of the hierarchical latent model.
+      latent2_size: size of the second latent of the hierarchical latent model.
+      kl_analytic: whether to use analytical KL divergence.
+      decoder_stddev: standard deviation of the decoder.
+      name: A string representing name of the network.
+    """
     super(PixorSLMHierarchical, self).__init__(
       input_names=input_names,
       reconstruct_names=reconstruct_names,
@@ -166,11 +197,12 @@ class PixorSLMHierarchical(
       decoder_stddev=decoder_stddev,
       name=name)
     self.pixor_size = pixor_size
+    self.reconstruct_pixor_state = reconstruct_pixor_state
 
     if pixor_size == 64:
-      self.pixor_decoder = PixorDecoder64(base_depth)
+      self.pixor_decoder = PixorDecoder64(base_depth, reconstruct_pixor_state)
     elif pixor_size == 128:
-      self.pixor_decoder = PixorDecoder128(base_depth)
+      self.pixor_decoder = PixorDecoder128(base_depth, reconstruct_pixor_state)
     else:
       raise NotImplementedError
 
@@ -179,60 +211,30 @@ class PixorSLMHierarchical(
     for name in self.input_names:
       images_tmp = tf.image.convert_image_dtype(images[name], tf.float32)
       features[name] = self.encoders[name](images_tmp)
-    # features = sum(features.values())
     features = tf.concat(list(features.values()), axis=-1)
     return features
 
   def reconstruct_pixor(self, latent):
-    vh_clas, vh_regr, pixor_state = self.pixor_decoder(latent)
-    return {'vh_clas': vh_clas, 'vh_regr': vh_regr, 'pixor_state': pixor_state}
+    if self.reconstruct_pixor_state:
+      vh_clas, vh_regr, pixor_state = self.pixor_decoder(latent)
+      return {'vh_clas': vh_clas, 'vh_regr': vh_regr, 'pixor_state': pixor_state}
+    else:
+      vh_clas, vh_regr = self.pixor_decoder(latent)
+      return {'vh_clas': vh_clas, 'vh_regr': vh_regr, 'pixor_state': tf.zeros((vh_clas.shape[0], 5))}
 
-  def compute_loss(self, images, actions, step_types, latent_posterior_samples_and_dists=None):
-    sequence_length = step_types.shape[1] - 1
+  def compute_loss(self, images, actions, step_types, latent_posterior_samples_and_dists=None, num_first_image=5):
+    # Compuate the latents
+    latent1_dists, latent2_dists, latent1_samples, latent2_samples = \
+      self.compute_latents(images, actions, step_types, latent_posterior_samples_and_dists, num_first_image)
 
-    if latent_posterior_samples_and_dists is None:
-      latent_posterior_samples_and_dists = self.sample_posterior(images, actions, step_types)
-    (latent1_posterior_samples, latent2_posterior_samples), (latent1_posterior_dists, latent2_posterior_dists) = (
-        latent_posterior_samples_and_dists)
-    (latent1_prior_samples, latent2_prior_samples), _ = self.sample_prior_or_posterior(actions, step_types)  # for visualization
+    latent1_posterior_dists, latent1_prior_dists = latent1_dists
+    latent2_posterior_dists, latent2_prior_dists = latent2_dists
+    latent1_posterior_samples, latent1_prior_samples, \
+      latent1_conditional_prior_samples = latent1_samples
+    latent2_posterior_samples, latent2_prior_samples, \
+      latent2_conditional_prior_samples = latent2_samples
 
-    first_image = {}
-    num_first_image = 5
-    for k,v in images.items():
-      first_image[k] = v[:, :num_first_image]
-    (latent1_conditional_prior_samples, latent2_conditional_prior_samples), _ = self.sample_prior_or_posterior(
-        actions, step_types, images=first_image)  # for visualization. condition on first image only
-
-    def where_and_concat(reset_masks, first_prior_tensors, after_first_prior_tensors):
-      after_first_prior_tensors = tf.where(reset_masks[:, 1:], first_prior_tensors[:, 1:], after_first_prior_tensors)
-      prior_tensors = tf.concat([first_prior_tensors[:, 0:1], after_first_prior_tensors], axis=1)
-      return prior_tensors
-
-    reset_masks = tf.concat([tf.ones_like(step_types[:, 0:1], dtype=tf.bool),
-                             tf.equal(step_types[:, 1:], ts.StepType.FIRST)], axis=1)
-
-    latent1_reset_masks = tf.tile(reset_masks[:, :, None], [1, 1, self.latent1_size])
-    latent1_first_prior_dists = self.latent1_first_prior(step_types)
-    # these distributions start at t=1 and the inputs are from t-1
-    latent1_after_first_prior_dists = self.latent1_prior(
-        latent2_posterior_samples[:, :sequence_length], actions[:, :sequence_length])
-    latent1_prior_dists = nest_utils.map_distribution_structure(
-        functools.partial(where_and_concat, latent1_reset_masks),
-        latent1_first_prior_dists,
-        latent1_after_first_prior_dists)
-
-    latent2_reset_masks = tf.tile(reset_masks[:, :, None], [1, 1, self.latent2_size])
-    latent2_first_prior_dists = self.latent2_first_prior(latent1_posterior_samples)
-    # these distributions start at t=1 and the last 2 inputs are from t-1
-    latent2_after_first_prior_dists = self.latent2_prior(
-        latent1_posterior_samples[:, 1:sequence_length+1],
-        latent2_posterior_samples[:, :sequence_length],
-        actions[:, :sequence_length])
-    latent2_prior_dists = nest_utils.map_distribution_structure(
-        functools.partial(where_and_concat, latent2_reset_masks),
-        latent2_first_prior_dists,
-        latent2_after_first_prior_dists)
-
+    # Compute the KL divergence part of the ELBO
     outputs = {}
 
     if self.kl_analytic:
@@ -259,13 +261,12 @@ class PixorSLMHierarchical(
       'kl_divergence': tf.reduce_mean(latent1_kl_divergences + latent2_kl_divergences),
     })
 
-    # Compute the loss
     elbo = - latent1_kl_divergences - latent2_kl_divergences
 
+    # Compute the reconstruction part of the ELBO
     likelihood_dists = {}
     likelihood_log_probs = {}
     reconstruction_error = {}
-
     for name in self.reconstruct_names:
       likelihood_dists[name] = self.decoders[name](latent1_posterior_samples, latent2_posterior_samples)
       images_tmp = tf.image.convert_image_dtype(images[name], tf.float32)
@@ -280,10 +281,10 @@ class PixorSLMHierarchical(
       })
       elbo += likelihood_log_probs[name]
 
-    # average over the batch dimension
+    # Compute the loss of KL divergence and reconstruction
     loss = -tf.reduce_mean(elbo)
 
-    # Save the images for inputs and masks
+    # Generate the images
     posterior_images = {}
     prior_images = {}
     conditional_prior_images = {}
@@ -306,35 +307,29 @@ class PixorSLMHierarchical(
       'conditional_prior_images': conditional_prior_images,
     })
 
-    # Compute the pixor loss
-    vh_clas_pred, vh_regr_pred, pixor_state_pred = self.pixor_decoder(latent1_posterior_samples, latent2_posterior_samples)
+    # Compute the perception loss
+    if self.reconstruct_pixor_state:
+      vh_clas_pred, vh_regr_pred, pixor_state_pred = self.pixor_decoder(latent1_posterior_samples, latent2_posterior_samples)
+      pixor_state_label = tf.image.convert_image_dtype(images['pixor_state'], tf.float32)
+    else:
+      vh_clas_pred, vh_regr_pred = self.pixor_decoder(latent1_posterior_samples, latent2_posterior_samples)
     vh_clas_label = tf.image.convert_image_dtype(images['vh_clas'], tf.float32)
     vh_regr_label = tf.image.convert_image_dtype(images['vh_regr'], tf.float32)
-    pixor_state_label = tf.image.convert_image_dtype(images['pixor_state'], tf.float32)
 
-    # pos_pixels = tf.reduce_sum(vh_clas_label)
     cls_loss = focal_loss(vh_clas_pred, vh_clas_label)
     reg_loss = smoothL1_loss(vh_clas_label*vh_regr_pred, vh_regr_label) * 0.1
-    state_loss = smoothL1_loss(pixor_state_pred, pixor_state_label)
-
-    perception_loss = cls_loss + reg_loss + state_loss
-    loss = loss + 10 * perception_loss
-
-    # Generate cls images
-    if self.obs_size == self.pixor_size:
-      tile_shape = [1]*len(vh_clas_label.shape)
-      tile_shape[-1] = 3
-      original_images_clas = tf.tile(vh_clas_label, tile_shape)
-      posterior_images_clas = tf.tile(vh_clas_pred, tile_shape)
-      original_images = tf.concat([original_images, original_images_clas], axis=-2)
-      posterior_images = tf.concat([posterior_images, posterior_images_clas], axis=-2)
-
     outputs.update({
       'cls_loss': cls_loss,
       'reg_loss': reg_loss,
-      'state_loss': state_loss,
-      'original_images': original_images,
-      'posterior_images': posterior_images,
     })
+
+    perception_loss = cls_loss + reg_loss
+
+    if self.reconstruct_pixor_state:
+      state_loss = smoothL1_loss(pixor_state_pred, pixor_state_label)
+      perception_loss += state_loss
+      outputs.update({'state_loss': state_loss})
+
+    loss = loss + 1 * perception_loss
 
     return loss, outputs

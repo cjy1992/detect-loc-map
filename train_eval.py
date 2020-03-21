@@ -304,11 +304,6 @@ def get_latent_reconstruction_bb_videos(images, latents, model_net, pixor_size=1
         'lidar':lidar,
         })
       image_bb = pixor.get_bb_bev_from_obs(dict_recons, pixor_size)  # (B,H,W,3)
-      # vh_clas = tf.image.convert_image_dtype(dict_recons['vh_clas'], dtype=tf.uint8)
-      # tile_shape = [1]*len(vh_clas.shape)
-      # tile_shape[-1] = 3
-      # image_clas = tf.tile(vh_clas, tile_shape)  # (B,H,W,3)
-      # image = tf.concat([image_clas, image_bb], axis=-2)
       videos[-1].append(image_bb)
 
   max_episode_length = max([len(video) for video in videos])
@@ -331,7 +326,8 @@ def train_eval(
     model_network_ctor_type='non-hierarchical',  # model net
     input_names=['camera', 'lidar'],  # names for inputs
     reconstruct_names=['roadmap'],  # names for masks
-    pixor_names=['vh_clas', 'vh_regr', 'pixor_state'],
+    pixor_names=['vh_clas', 'vh_regr', 'pixor_state'],  # names for pixor outputs
+    reconstruct_pixor_state=True,  # whether to reconstruct pixor_state
     extra_names=['state'],  # extra inputs
     obs_size=64,  # size of observation image
     pixor_size=64,  # size of pixor output image
@@ -414,7 +410,8 @@ def train_eval(
     else:
       raise NotImplementedError
     model_net = model_network_ctor(
-      input_names, reconstruct_names, obs_size=obs_size, pixor_size=pixor_size)
+      input_names, reconstruct_names, obs_size=obs_size, pixor_size=pixor_size,
+      reconstruct_pixor_state=reconstruct_pixor_state)
 
     # Build the perception agent
     actor_network = state_based_heuristic_actor_network.StateBasedHeuristicActorNetwork(
