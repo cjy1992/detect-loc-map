@@ -16,6 +16,7 @@ train_eval.log_interval = 200
 
 train_eval.training = True
 train_eval.reconstruct_pixor_state = False
+train_eval.perception_weight = 1.0
 train_eval.initial_collect_steps = 50000
 
 train_eval.num_images_per_summary = 2

@@ -15,8 +15,8 @@ from tf_agents.trajectories import trajectory
 from tf_agents.utils import eager_utils
 
 from perception_driving.policies import perception_state_policy
-from sequential_latent_model.utils import gif_utils
-from sequential_latent_model.utils import nest_utils
+from interp_e2e_driving.utils import gif_utils
+from interp_e2e_driving.utils import nest_utils
 
 
 @gin.configurable

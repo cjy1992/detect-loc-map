@@ -58,7 +58,7 @@ def get_eval_lists(images, latents, model_net, pixor_size=128):
   return gt_boxes_list, corners_list, scores_list, gt_pixor_state_list, recons_pixor_state_list
 
 
-def get_eval_metrics(images, latents, model_net, pixor_size=128, ap_range=[0.3,0.5,0.7], filename = '128_norecons61'):
+def get_eval_metrics(images, latents, model_net, pixor_size=128, ap_range=[0.3,0.5,0.7], filename = 'metrics'):
   gt_boxes_list, corners_list, scores_list, gt_pixor_state_list, recons_pixor_state_list \
     = get_eval_lists(images, latents, model_net, pixor_size=pixor_size)
 

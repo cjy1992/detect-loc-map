@@ -165,6 +165,7 @@ class PixorSLMHierarchical(
                obs_size=64,
                pixor_size=64,
                reconstruct_pixor_state=True,
+               perception_weight=1.0,
                base_depth=32,
                latent1_size=32,
                latent2_size=256,
@@ -179,6 +180,8 @@ class PixorSLMHierarchical(
         the image inputs have same width and height.
       pixor_size: the pixel size of the PIXOR outputs. Here we assume
         the images have same width and height.
+      reconstruct_pixor_state: whether to reconstruct pixor state.
+      perception_weight: weight of perception part loss.
       base_depth: base depth of the convolutional layers.
       latent1_size: size of the first latent of the hierarchical latent model.
       latent2_size: size of the second latent of the hierarchical latent model.
@@ -198,6 +201,7 @@ class PixorSLMHierarchical(
       name=name)
     self.pixor_size = pixor_size
     self.reconstruct_pixor_state = reconstruct_pixor_state
+    self.perception_weight = perception_weight
 
     if pixor_size == 64:
       self.pixor_decoder = PixorDecoder64(base_depth, reconstruct_pixor_state)
@@ -330,6 +334,6 @@ class PixorSLMHierarchical(
       perception_loss += state_loss
       outputs.update({'state_loss': state_loss})
 
-    loss = loss + 1 * perception_loss
+    loss = loss + self.perception_weight * perception_loss
 
     return loss, outputs

@@ -204,7 +204,8 @@ def compute_summaries(metrics,
   # Get the evaluation metrics for pixor detection
   if pixor_metrics:
     print('Calculating detection evaluation metrics!')
-    pixor.get_eval_metrics(images, latents, model_net, pixor_size=pixor_size, ap_range=[0.1,0.3,0.5,0.7,0.9])
+    pixor.get_eval_metrics(images, latents, model_net, 
+      pixor_size=pixor_size, ap_range=[0.1,0.3,0.5,0.7,0.9], filename='metrics')
   
   # Choose the first view episodes for visualization
   images = images[:num_episodes_to_render]
@@ -331,6 +332,7 @@ def train_eval(
     extra_names=['state'],  # extra inputs
     obs_size=64,  # size of observation image
     pixor_size=64,  # size of pixor output image
+    perception_weight=1.0,  # weight of perception part loss
     # Params for collect
     initial_collect_steps=1000,
     replay_buffer_capacity=int(5e4+1),
@@ -411,7 +413,7 @@ def train_eval(
       raise NotImplementedError
     model_net = model_network_ctor(
       input_names, reconstruct_names, obs_size=obs_size, pixor_size=pixor_size,
-      reconstruct_pixor_state=reconstruct_pixor_state)
+      reconstruct_pixor_state=reconstruct_pixor_state, perception_weight=perception_weight)
 
     # Build the perception agent
     actor_network = state_based_heuristic_actor_network.StateBasedHeuristicActorNetwork(
