@@ -329,9 +329,6 @@ def get_bev(background, corners, pixor_size=128):
   # intensity = 0*np.ones((pixor_size, pixor_size, 3), dtype=np.uint8) 
   background = np.rot90(background[0].numpy(), 3)
   intensity = cv2.resize(background, (pixor_size,pixor_size), interpolation = cv2.INTER_AREA)
-  # intensity = background[0].numpy()
-
-  # FLip in the x direction
 
   if corners is not None:
     for corners in corners:

@@ -3,6 +3,10 @@
 
 This repo contains code for [End-to-end Autonomous Driving Perception with Sequential Latent Representation Learning](). This work introduces a novel end-to-end approach for autonomous driving perception. A latent space is introduced to capture all relevant features useful for perception, which is learned through sequential latent representation learning. The learned end-to-end perception model is able to solve the detection, tracking, localization and mapping problems altogether with only minimum human engineering efforts and without storing any maps online. The proposed method is evaluated in a realistic urban driving simulator (CARLA simulator), with both camera image and lidar point cloud as sensor inputs.
 
+## System Requirements
+- Ubuntu 16.04
+- NVIDIA GPU with CUDA 10. See [GPU guide](https://www.tensorflow.org/install/gpu) for TensorFlow.
+
 ## Installation
 1. Setup conda environment
 ```

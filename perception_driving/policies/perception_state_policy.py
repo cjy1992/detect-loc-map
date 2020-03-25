@@ -94,7 +94,7 @@ class PerceptionStatePolicy(tf_policy.Base):
     return self._state_based_actor_network(time_step.observation['state'])
 
   def _variables(self):
-    variables = list(self._model_network)
+    variables = list(self._model_network.variables)
     return variables
 
   def _action(self, time_step, policy_state, seed):

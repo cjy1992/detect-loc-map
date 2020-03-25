@@ -407,8 +407,6 @@ def train_eval(
     # Get model network
     if model_network_ctor_type == 'hierarchical':
       model_network_ctor = sequential_latent_pixor_network.PixorSLMHierarchical
-    elif model_network_ctor_type == 'non-hierarchical':
-      model_network_ctor = sequential_latent_pixor_network.PixorSLMNonHierarchical
     else:
       raise NotImplementedError
     model_net = model_network_ctor(
@@ -437,14 +435,6 @@ def train_eval(
         fps=fps)
     tf_agent.initialize()
 
-    if training:
-      # Get replay buffer
-      replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
-          data_spec=tf_agent.collect_data_spec,
-          batch_size=1,  # No parallel environments
-          max_length=replay_buffer_capacity)
-      replay_observer = [replay_buffer.add_batch]
-
     # Train metrics
     env_steps = tf_metrics.EnvironmentSteps()
     average_return = tf_metrics.AverageReturnMetric(
@@ -471,14 +461,42 @@ def train_eval(
         metrics=metric_utils.MetricsGroup(train_metrics, 'train_metrics'),
         max_to_keep=2)
     train_checkpointer.initialize_or_restore()
+
+    model_checkpointer = common.Checkpointer(
+        ckpt_dir=os.path.join(root_dir, 'model'),
+        model=model_net,
+        max_to_keep=2)
+
+    # Evaluation
+    compute_summaries(
+      eval_metrics,
+      eval_tf_env,
+      eval_policy,
+      train_step=global_step,
+      summary_writer=summary_writer,
+      num_episodes=num_eval_episodes,
+      num_episodes_to_render=num_images_per_summary,
+      model_net=model_net,
+      fps=10,
+      image_keys=['camera', 'lidar', 'roadmap'],
+      pixor_size=pixor_size)
+
+    # Collect/restore data and train
     if training:
+      # Get replay buffer
+      replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
+          data_spec=tf_agent.collect_data_spec,
+          batch_size=1,  # No parallel environments
+          max_length=replay_buffer_capacity)
+      replay_observer = [replay_buffer.add_batch]
+
+      # Replay buffer checkpointer
       rb_checkpointer = common.Checkpointer(
           ckpt_dir=os.path.join(root_dir, 'replay_buffer'),
           max_to_keep=1,
           replay_buffer=replay_buffer)
       rb_checkpointer.initialize_or_restore()
 
-    if training:
       # Collect driver
       initial_collect_driver = dynamic_step_driver.DynamicStepDriver(
           tf_env,
@@ -497,20 +515,6 @@ def train_eval(
         initial_collect_driver.run()
         rb_checkpointer.save(global_step=global_step.numpy())
 
-    compute_summaries(
-      eval_metrics,
-      eval_tf_env,
-      eval_policy,
-      train_step=global_step,
-      summary_writer=summary_writer,
-      num_episodes=num_eval_episodes,
-      num_episodes_to_render=num_images_per_summary,
-      model_net=model_net,
-      fps=10,
-      image_keys=['camera', 'lidar', 'roadmap'],
-      pixor_size=pixor_size)
-
-    if training:
       # Dataset generates trajectories with shape [Bxslx...]
       dataset = replay_buffer.as_dataset(
           num_parallel_calls=3,
@@ -557,6 +561,7 @@ def train_eval(
         global_step_val = global_step.numpy()
         if global_step_val % train_checkpoint_interval == 0:
           train_checkpointer.save(global_step=global_step_val)
+          model_checkpointer.save(global_step=global_step_val)
 
 
 def main(_):
