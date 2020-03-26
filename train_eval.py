@@ -299,7 +299,10 @@ def get_latent_reconstruction_bb_videos(images, latents, model_net, pixor_size=1
     videos.append([])
     for j in range(len(latent_eps)):
       latent = latent_eps[j]
-      lidar = images[i][j]['lidar']
+      if 'lidar' in images[i][j].keys():
+        lidar = images[i][j]['lidar']
+      else:
+        lidar = tf.zeros((1, pixor_size, pixor_size, 3))
       dict_recons = model_net.reconstruct_pixor(latent)
       dict_recons.update({
         'lidar':lidar,
@@ -478,7 +481,7 @@ def train_eval(
       num_episodes_to_render=num_images_per_summary,
       model_net=model_net,
       fps=10,
-      image_keys=['camera', 'lidar', 'roadmap'],
+      image_keys=['camera_front', 'roadmap'],
       pixor_size=pixor_size)
 
     # Collect/restore data and train
@@ -554,7 +557,7 @@ def train_eval(
             num_episodes_to_render=num_images_per_summary,
             model_net=model_net,
             fps=10,
-            image_keys=['camera', 'lidar', 'roadmap'],
+            image_keys=['camera_front', 'roadmap'],
             pixor_size=pixor_size)
 
         # Save checkpoints

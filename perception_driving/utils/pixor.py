@@ -96,6 +96,7 @@ def get_eval_metrics(images, latents, model_net, pixor_size=128, ap_range=[0.3,0
 
     AP, precision, recall, p, r = compute_ap(all_matches, gts, preds)
     print('ap', ap)
+    print('AP', AP)
     print('precision', p)
     print('recall', r)
     APs[ap] = AP
@@ -248,7 +249,10 @@ def get_bb_bev_from_obs(dict_obs, pixor_size=128):
   vh_regr = dict_obs['vh_regr']  # (B,H,W,6)
   decoded_reg = decode_reg(vh_regr, pixor_size)  # (B,H,W,8)
 
-  lidar = dict_obs['lidar']
+  if 'lidar' in dict_obs.keys():
+    lidar = dict_obs['lidar']
+  else:
+    lidar = tf.zeros((1, pixor_size, pixor_size, 3))
 
   B = vh_regr.shape[0]
   images = []
