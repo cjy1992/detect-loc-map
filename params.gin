@@ -9,7 +9,7 @@ train_eval.sequence_length = 10
 train_eval.obs_size=64
 train_eval.pixor_size=64
 
-train_eval.num_eval_episodes = 1
+train_eval.num_eval_episodes = 2
 train_eval.eval_interval = 2000
 train_eval.summary_interval = 2000
 train_eval.log_interval = 200
@@ -19,7 +19,7 @@ train_eval.reconstruct_pixor_state = False
 train_eval.perception_weight = 5.0
 train_eval.initial_collect_steps = 50000
 
-train_eval.num_images_per_summary = 1
+train_eval.num_images_per_summary = 2
  
 train_eval.train_checkpoint_interval = 2000
 train_eval.action_repeat=1

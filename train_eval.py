@@ -396,7 +396,7 @@ def train_eval(
       lambda: tf.math.equal(global_step % summary_interval, 0)):
     # Create Carla environment
     py_env, eval_py_env = load_carla_env(env_name='carla-v0', lidar_bin=32/obs_size, pixor_size=pixor_size,
-      obs_channels=list(set(input_names+reconstruct_names+pixor_names+extra_names)), action_repeat=action_repeat)
+      obs_channels=list(set(input_names+reconstruct_names+pixor_names+extra_names+['lidar'])), action_repeat=action_repeat)
 
     tf_env = tf_py_environment.TFPyEnvironment(py_env)
     eval_tf_env = tf_py_environment.TFPyEnvironment(eval_py_env)
@@ -481,7 +481,7 @@ def train_eval(
       num_episodes_to_render=num_images_per_summary,
       model_net=model_net,
       fps=10,
-      image_keys=['camera_front', 'roadmap'],
+      image_keys=['camera_front','camera_back','camera_left','camera_right','roadmap'],
       pixor_size=pixor_size)
 
     # Collect/restore data and train
@@ -557,7 +557,7 @@ def train_eval(
             num_episodes_to_render=num_images_per_summary,
             model_net=model_net,
             fps=10,
-            image_keys=['camera_front', 'roadmap'],
+            image_keys=['camera_front','camera_back','camera_left','camera_right','roadmap'],
             pixor_size=pixor_size)
 
         # Save checkpoints
