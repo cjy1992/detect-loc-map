@@ -96,6 +96,7 @@ def get_eval_metrics(images, latents, model_net, pixor_size=128, ap_range=[0.3,0
 
     AP, precision, recall, p, r = compute_ap(all_matches, gts, preds)
     print('ap', ap)
+    print('AP', AP)
     print('precision', p)
     print('recall', r)
     APs[ap] = AP
