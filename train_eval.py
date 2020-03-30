@@ -93,6 +93,7 @@ def load_carla_env(
   target_waypt_index=5,
   display_route=True,
   pixor_size=64,
+  pixor=True,
   obs_channels=None,
   action_repeat=1):
   """Loads train and eval environments."""
@@ -122,6 +123,7 @@ def load_carla_env(
     'target_waypt_index': target_waypt_index,  # index of the target way point
     'display_route': display_route,  # whether to render the desired route
     'pixor_size': pixor_size,  # size of the pixor labels
+    'pixor': pixor,  # whether to output PIXOR observation
   }
 
   gym_spec = gym.spec(env_name)
