@@ -1,7 +1,7 @@
 # End-to-end Autonomous Driving Perception
-[[Project webpage]](https://sites.google.com/berkeley.edu/e2e-percep/) [[Paper]]()
+[[Project webpage]](https://sites.google.com/berkeley.edu/e2e-percep/) [[Paper]](https://arxiv.org/abs/2003.12464)
 
-This repo contains code for [End-to-end Autonomous Driving Perception with Sequential Latent Representation Learning](). This work introduces a novel end-to-end approach for autonomous driving perception. A latent space is introduced to capture all relevant features useful for perception, which is learned through sequential latent representation learning. The learned end-to-end perception model is able to solve the detection, tracking, localization and mapping problems altogether with only minimum human engineering efforts and without storing any maps online. The proposed method is evaluated in a realistic urban driving simulator (CARLA simulator), with both camera image and lidar point cloud as sensor inputs.
+This repo contains code for [End-to-end Autonomous Driving Perception with Sequential Latent Representation Learning](https://arxiv.org/abs/2003.12464). This work introduces a novel end-to-end approach for autonomous driving perception. A latent space is introduced to capture all relevant features useful for perception, which is learned through sequential latent representation learning. The learned end-to-end perception model is able to solve the detection, tracking, localization and mapping problems altogether with only minimum human engineering efforts and without storing any maps online. The proposed method is evaluated in a realistic urban driving simulator (CARLA simulator), with both camera image and lidar point cloud as sensor inputs.
 
 ## System Requirements
 - Ubuntu 16.04
@@ -59,7 +59,7 @@ If you find this useful for your research, please use the following.
 @article{chen2020perception,
   title={End-to-end Autonomous Driving Perception with Sequential Latent Representation Learning},
   author={Chen, Jianyu and Xu, Zhuo and Tomizuka, Masayoshi},
-  journal={arXiv preprint arXiv:},
+  journal={arXiv preprint arXiv:2003.12464},
   year={2020}
 }
 ```
