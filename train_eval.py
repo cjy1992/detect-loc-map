@@ -471,18 +471,19 @@ def train_eval(
         max_to_keep=2)
 
     # Evaluation
-    compute_summaries(
-      eval_metrics,
-      eval_tf_env,
-      eval_policy,
-      train_step=global_step,
-      summary_writer=summary_writer,
-      num_episodes=num_eval_episodes,
-      num_episodes_to_render=num_images_per_summary,
-      model_net=model_net,
-      fps=10,
-      image_keys=['camera_front','camera_back','camera_left','camera_right','roadmap'],
-      pixor_size=pixor_size)
+    if num_eval_episodes>0:
+      compute_summaries(
+        eval_metrics,
+        eval_tf_env,
+        eval_policy,
+        train_step=global_step,
+        summary_writer=summary_writer,
+        num_episodes=num_eval_episodes,
+        num_episodes_to_render=num_images_per_summary,
+        model_net=model_net,
+        fps=10,
+        image_keys=['camera_front','camera_back','camera_left','camera_right','roadmap'],
+        pixor_size=pixor_size)
 
     # Collect/restore data and train
     if training:
@@ -545,7 +546,7 @@ def train_eval(
           train_metric.tf_summaries(train_step=global_step.numpy())
 
         # Evaluation
-        if global_step.numpy() % eval_interval == 0:
+        if global_step.numpy() % eval_interval == 0 and num_eval_episodes>0:
           # Log evaluation metrics
           compute_summaries(
             eval_metrics,

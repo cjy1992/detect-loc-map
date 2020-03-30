@@ -31,7 +31,7 @@ train_eval.extra_names=['state']
 
 # Parameters for load_carla_env:
 # ==============================================================================
-load_carla_env.max_time_episode=300
+load_carla_env.max_time_episode=500
 load_carla_env.port=2000
 load_carla_env.number_of_vehicles=100
 load_carla_env.display_route=False
