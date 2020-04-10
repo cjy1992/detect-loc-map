@@ -48,7 +48,7 @@ class PerceptionStatePolicy(tf_policy.Base):
       name: The name of this policy. All variables in this module will fall
         under that name. Defaults to the class name.
     """
-    self._state_based_actor_network = actor_network
+    self._actor_network = actor_network
     self._model_network = model_network
     self._collect = collect
 
@@ -91,7 +91,7 @@ class PerceptionStatePolicy(tf_policy.Base):
   def _apply_actor_network(self, time_step, policy_state):
     """Generate action using actor network with latent"""
     network_state, latent_state, _ = policy_state
-    return self._state_based_actor_network(time_step.observation['state'])
+    return self._actor_network(time_step.observation['state'])
 
   def _variables(self):
     variables = list(self._model_network.variables)
