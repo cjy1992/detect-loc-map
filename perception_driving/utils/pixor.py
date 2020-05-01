@@ -22,7 +22,7 @@ import tensorflow as tf
 from shapely.geometry import Polygon
 
 
-def get_eval_lists(images, latents, model_net, pixor_size=128):
+def get_eval_lists(images, latents, model_net, predict_speed, pixor_size=128):
   gt_boxes_list = []
   corners_list = []
   scores_list = []
@@ -37,30 +37,36 @@ def get_eval_lists(images, latents, model_net, pixor_size=128):
       dict_recons = model_net.reconstruct_pixor(latent)
 
       vh_clas_recons = tf.squeeze(dict_recons['vh_clas'], axis=-1)  # (B,H,W,1)
-      vh_regr_recons = dict_recons['vh_regr']  # (B,H,W,6)
-      decoded_reg_recons = decode_reg(vh_regr_recons, pixor_size)  # (B,H,W,8)      
+      vh_regr_recons = dict_recons['vh_regr']  # (B,H,W,6/8)
+      decoded_reg_recons = decode_reg(vh_regr_recons, predict_speed, pixor_size)  # (B,H,W,8/10)      
       pixor_state_recons = dict_recons['pixor_state']
 
       vh_clas_obs = tf.squeeze(dict_obs['vh_clas'], axis=-1)  # (B,H,W,1)
-      vh_regr_obs = dict_obs['vh_regr']  # (B,H,W,6)
-      decoded_reg_obs = decode_reg(vh_regr_obs, pixor_size)  # (B,H,W,8)
+      vh_regr_obs = dict_obs['vh_regr']  # (B,H,W,6/8)
+      decoded_reg_obs = decode_reg(vh_regr_obs, predict_speed, pixor_size)  # (B,H,W,8/10)
       pixor_state_obs = dict_obs['pixor_state']
 
       B = vh_regr_obs.shape[0]
       for k in range(B):
-        gt_boxes, _ = pixor_postprocess(vh_clas_obs[k], decoded_reg_obs[k])
-        corners, scores = pixor_postprocess(vh_clas_recons[k], decoded_reg_recons[k])  # (N,4,2)      
-        gt_boxes_list.append(gt_boxes)
-        corners_list.append(corners)
+        gt_boxes, _ = pixor_postprocess(vh_clas_obs[k], decoded_reg_obs[k], predict_speed)
+        # (N,5/4,2)
+        corners, scores = pixor_postprocess(vh_clas_recons[k], decoded_reg_recons[k], predict_speed)
+        if predict_speed and len(scores) > 0:
+          gt_boxes_list.append(gt_boxes[:,:4,:])
+          corners_list.append(corners[:,:4,:])
+        else:
+          gt_boxes_list.append(gt_boxes)
+          corners_list.append(corners)
         scores_list.append(scores)
         gt_pixor_state_list.append(pixor_state_obs[k])
         recons_pixor_state_list.append(pixor_state_recons[k])
   return gt_boxes_list, corners_list, scores_list, gt_pixor_state_list, recons_pixor_state_list
 
 
-def get_eval_metrics(images, latents, model_net, pixor_size=128, ap_range=[0.3,0.5,0.7], filename = 'metrics'):
+def get_eval_metrics(images, latents, model_net, predict_speed,
+    pixor_size=128, ap_range=[0.3,0.5,0.7], filename = 'metrics'):
   gt_boxes_list, corners_list, scores_list, gt_pixor_state_list, recons_pixor_state_list \
-    = get_eval_lists(images, latents, model_net, pixor_size=pixor_size)
+    = get_eval_lists(images, latents, model_net, predict_speed, pixor_size=pixor_size)
 
   N = len(gt_boxes_list)  
 
@@ -242,28 +248,31 @@ def compute_ap(pred_match, num_gt, num_pred):
   return mAP, precisions, recalls, precision, recall
 
 
-def get_bb_bev_from_obs(dict_obs, pixor_size=128):
+def get_bb_bev_from_obs(dict_obs, predict_speed, pixor_size=128):
   """Input dict_obs with (B,H,W,C), return (B,H,W,3)"""
   vh_clas = tf.squeeze(dict_obs['vh_clas'], axis=-1)  # (B,H,W,1)
   # vh_clas = tf.gather(vh_clas, 0, axis=-1)  # (B,H,W)
-  vh_regr = dict_obs['vh_regr']  # (B,H,W,6)
-  decoded_reg = decode_reg(vh_regr, pixor_size)  # (B,H,W,8)
+  vh_regr = dict_obs['vh_regr']  # (B,H,W,6/8)
+  decoded_reg = decode_reg(vh_regr, predict_speed, pixor_size)  # (B,H,W,8/10)
 
   lidar = dict_obs['lidar']
 
   B = vh_regr.shape[0]
   images = []
   for i in range(B):
-    corners, _ = pixor_postprocess(vh_clas[i], decoded_reg[i])  # (N,4,2)
+    corners, _ = pixor_postprocess(vh_clas[i], decoded_reg[i], predict_speed)  # (N,5/4,2)
     image = get_bev(lidar, corners, pixor_size)  # (H,W,3)
     images.append(image)
   images = tf.convert_to_tensor(images, dtype=np.uint8)  # (B,H,W,3)
   return images
 
 
-def decode_reg(vh_regr, pixor_size=128):
+def decode_reg(vh_regr, predict_speed, pixor_size=128):
   # Tensor in (B, H, W, 1)
-  cos_t, sin_t, dx, dy, logw, logl = tf.split(vh_regr, 6, axis=-1)
+  if predict_speed:
+    cos_t, sin_t, dx, dy, logw, logl, dvx, dvy = tf.split(vh_regr, 8, axis=-1)
+  else:
+    cos_t, sin_t, dx, dy, logw, logl = tf.split(vh_regr, 6, axis=-1)
   yaw = tf.atan2(sin_t, cos_t)
   cos_t = tf.cos(yaw)
   sin_t = tf.sin(yaw)
@@ -296,14 +305,17 @@ def decode_reg(vh_regr, pixor_size=128):
   front_left_x = centre_x + l * cos_t + w * sin_t
   front_left_y = centre_y + l * sin_t - w * cos_t
 
-  # Shape (B, H, W, 8)
+  # Shape (B, H, W, 10)
   decoded_reg = tf.concat([rear_left_x, rear_left_y, rear_right_x, rear_right_y,
                            front_right_x, front_right_y, front_left_x, front_left_y], axis=-1)
+
+  if predict_speed:
+    decoded_reg = tf.concat([decoded_reg, dvx, dvy], axis=-1)
 
   return decoded_reg
 
 
-def pixor_postprocess(vh_clas, decoded_reg, cls_threshold=0.6):
+def pixor_postprocess(vh_clas, decoded_reg, predict_speed, cls_threshold=0.6):
   """Return bounding-box image with shape (H, W, 3).
     
     vh_clas: (H, W) tensor
@@ -315,8 +327,11 @@ def pixor_postprocess(vh_clas, decoded_reg, cls_threshold=0.6):
   if num_boxes == 0:  # No bounding boxes
     return np.array([]), []
 
-  corners = tf.boolean_mask(decoded_reg, activation)  # (N,8)
-  corners = tf.reshape(corners, (-1, 4, 2)).numpy()  # (N,4,2)
+  corners = tf.boolean_mask(decoded_reg, activation)  # (N,C)
+  if predict_speed:
+    corners = tf.reshape(corners, (-1, 5, 2)).numpy()  # (N,5,2)
+  else:
+    corners = tf.reshape(corners, (-1, 4, 2)).numpy()  # (N,4,2)
   scores = tf.boolean_mask(vh_clas, activation).numpy()  # (N,)
 
   # NMS
@@ -331,11 +346,18 @@ def get_bev(background, corners, pixor_size=128):
   background = np.rot90(background[0].numpy(), 3)
   intensity = cv2.resize(background, (pixor_size,pixor_size), interpolation = cv2.INTER_AREA)
 
-  if corners is not None:
-    for corners in corners:
-      plot_corners = corners.astype(int).reshape((-1, 1, 2))
+  if len(corners) > 0:
+    for corner in corners:
+      # Plot vehicle bounding box
+      plot_corners = corner[:4,:].astype(int).reshape((-1, 1, 2))
       cv2.polylines(intensity, [plot_corners], True, (255, 255, 0), 1)
       cv2.line(intensity, tuple(plot_corners[2, 0]), tuple(plot_corners[3, 0]), (0, 0, 255), 2)
+      # Plot velocity vector
+      if len(corner) == 5:
+        center = corner[:4,:].mean(0)
+        vec = center + corner[4,:]*30
+        cv2.line(intensity, tuple(center.astype(int)), tuple(vec.astype(int)), 
+          (255, 0, 255), 2)
 
   image = intensity.astype(np.uint8)
   image = np.rot90(image, 1)

@@ -23,7 +23,8 @@ EPS = 1e-8
 class PixorDecoder64(tf.Module):
   """Decoder from latent to PIXOR outputs."""
 
-  def __init__(self, base_depth, reconstruct_pixor_state=True, name=None):
+  def __init__(self, base_depth, reconstruct_pixor_state=True, 
+    predict_speed=True, name=None):
     super(PixorDecoder64, self).__init__(name=name)
     conv_transpose = functools.partial(
         tf.keras.layers.Conv2DTranspose, padding="SAME", activation=tf.nn.leaky_relu)
@@ -34,7 +35,10 @@ class PixorDecoder64(tf.Module):
     # self.conv_transpose5 = conv_transpose(channels, 5, 2)
     self.conv_transpose_cls = tf.keras.layers.Conv2DTranspose(
         1, 5, 2, padding="SAME", activation=tf.nn.sigmoid)
-    self.conv_transpose_reg = conv_transpose(6, 5, 2)
+    if predict_speed:
+      self.conv_transpose_reg = conv_transpose(8, 5, 2)
+    else:
+      self.conv_transpose_reg = conv_transpose(6, 5, 2)
 
     if reconstruct_pixor_state:
       self.dense1 = tf.keras.layers.Dense(256, activation=tf.nn.leaky_relu)
@@ -57,7 +61,7 @@ class PixorDecoder64(tf.Module):
     out = self.conv_transpose4(out)
     # out = self.conv_transpose5(out)  # (sample*N*T, h, w, c)
     vh_clas = self.conv_transpose_cls(out)  # (sample*N*T, h, w, 1)
-    vh_regr = self.conv_transpose_reg(out)  # (sample*N*T, h, w, 6)
+    vh_regr = self.conv_transpose_reg(out)  # (sample*N*T, h, w, c)
 
     expanded_shape_cls = tf.concat(
         [tf.shape(latent)[:-1], tf.shape(vh_clas)[1:]], axis=0)
@@ -65,7 +69,7 @@ class PixorDecoder64(tf.Module):
     
     expanded_shape_reg = tf.concat(
         [tf.shape(latent)[:-1], tf.shape(vh_regr)[1:]], axis=0)
-    vh_regr = tf.reshape(vh_regr, expanded_shape_reg)  # (sample, N, T, h, w, 6)
+    vh_regr = tf.reshape(vh_regr, expanded_shape_reg)  # (sample, N, T, h, w, c)
 
     pixor = (vh_clas, vh_regr)
 
@@ -81,7 +85,8 @@ class PixorDecoder64(tf.Module):
 class PixorDecoder128(tf.Module):
   """Decoder from latent to PIXOR outputs."""
 
-  def __init__(self, base_depth, reconstruct_pixor_state=True, name=None):
+  def __init__(self, base_depth, reconstruct_pixor_state=True,
+    predict_speed=True, name=None):
     super(PixorDecoder128, self).__init__(name=name)
     conv_transpose = functools.partial(
         tf.keras.layers.Conv2DTranspose, padding="SAME", activation=tf.nn.leaky_relu)
@@ -93,7 +98,10 @@ class PixorDecoder128(tf.Module):
     # self.conv_transpose5 = conv_transpose(channels, 5, 2)
     self.conv_transpose_cls = tf.keras.layers.Conv2DTranspose(
         1, 5, 2, padding="SAME", activation=tf.nn.sigmoid)
-    self.conv_transpose_reg = conv_transpose(6, 5, 2)
+    if predict_speed:
+      self.conv_transpose_reg = conv_transpose(8, 5, 2)
+    else:
+      self.conv_transpose_reg = conv_transpose(6, 5, 2)
 
     if reconstruct_pixor_state:
       self.dense1 = tf.keras.layers.Dense(256, activation=tf.nn.leaky_relu)
@@ -117,7 +125,7 @@ class PixorDecoder128(tf.Module):
     out = self.conv_transpose5(out)
     # out = self.conv_transpose5(out)  # (sample*N*T, h, w, c)
     vh_clas = self.conv_transpose_cls(out)  # (sample*N*T, h, w, 1)
-    vh_regr = self.conv_transpose_reg(out)  # (sample*N*T, h, w, 6)
+    vh_regr = self.conv_transpose_reg(out)  # (sample*N*T, h, w, c)
 
     expanded_shape_cls = tf.concat(
         [tf.shape(latent)[:-1], tf.shape(vh_clas)[1:]], axis=0)
@@ -125,7 +133,7 @@ class PixorDecoder128(tf.Module):
     
     expanded_shape_reg = tf.concat(
         [tf.shape(latent)[:-1], tf.shape(vh_regr)[1:]], axis=0)
-    vh_regr = tf.reshape(vh_regr, expanded_shape_reg)  # (sample, N, T, h, w, 6)
+    vh_regr = tf.reshape(vh_regr, expanded_shape_reg)  # (sample, N, T, h, w, c)
 
     pixor = (vh_clas, vh_regr)
 
@@ -165,6 +173,7 @@ class PixorSLMHierarchical(
                obs_size=64,
                pixor_size=64,
                reconstruct_pixor_state=True,
+               predict_speed=True,
                perception_weight=1.0,
                base_depth=32,
                latent1_size=32,
@@ -181,6 +190,7 @@ class PixorSLMHierarchical(
       pixor_size: the pixel size of the PIXOR outputs. Here we assume
         the images have same width and height.
       reconstruct_pixor_state: whether to reconstruct pixor state.
+      predict_speed: whether to predict speed information.
       perception_weight: weight of perception part loss.
       base_depth: base depth of the convolutional layers.
       latent1_size: size of the first latent of the hierarchical latent model.
@@ -204,9 +214,9 @@ class PixorSLMHierarchical(
     self.perception_weight = perception_weight
 
     if pixor_size == 64:
-      self.pixor_decoder = PixorDecoder64(base_depth, reconstruct_pixor_state)
+      self.pixor_decoder = PixorDecoder64(base_depth, reconstruct_pixor_state, predict_speed)
     elif pixor_size == 128:
-      self.pixor_decoder = PixorDecoder128(base_depth, reconstruct_pixor_state)
+      self.pixor_decoder = PixorDecoder128(base_depth, reconstruct_pixor_state, predict_speed)
     else:
       raise NotImplementedError
 

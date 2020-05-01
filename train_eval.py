@@ -21,28 +21,13 @@ import collections
 import gym
 import gym_carla
 
-from tf_agents.agents.ddpg import critic_network
-from tf_agents.agents.ddpg import ddpg_agent
-from tf_agents.agents.dqn import dqn_agent
-from tf_agents.agents.ppo import ppo_agent
-from tf_agents.agents.sac import sac_agent
-from tf_agents.agents.td3 import td3_agent
 from tf_agents.drivers import dynamic_step_driver
 from tf_agents.environments import gym_wrapper
 from tf_agents.environments import tf_py_environment
 from tf_agents.environments import wrappers
 from tf_agents.eval import metric_utils
 from tf_agents.metrics import tf_metrics
-from tf_agents.networks import actor_distribution_network
-from tf_agents.networks import actor_distribution_rnn_network
-from tf_agents.networks import normal_projection_network
-from tf_agents.networks import q_rnn_network
-from tf_agents.networks import value_rnn_network
-from tf_agents.policies import greedy_policy
-from tf_agents.policies import random_tf_policy
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
-from tf_agents.specs import tensor_spec
-from tf_agents.trajectories import time_step as ts
 from tf_agents.trajectories import trajectory
 from tf_agents.utils import common
 
@@ -94,6 +79,8 @@ def load_carla_env(
   display_route=True,
   pixor_size=64,
   pixor=True,
+  pixor_speed=True,
+  speed_scale_for_pixor=20,
   obs_channels=None,
   action_repeat=1):
   """Loads train and eval environments."""
@@ -124,6 +111,8 @@ def load_carla_env(
     'display_route': display_route,  # whether to render the desired route
     'pixor_size': pixor_size,  # size of the pixor labels
     'pixor': pixor,  # whether to output PIXOR observation
+    'pixor_speed': pixor_speed,  # whether to include speed information in pixor
+    'speed_scale_for_pixor': speed_scale_for_pixor,  # scale the speed output for pixor
   }
 
   gym_spec = gym.spec(env_name)
@@ -157,7 +146,8 @@ def compute_summaries(metrics,
                       fps=10,
                       image_keys=None,
                       pixor_size=128,
-                      pixor_metrics=True):
+                      pixor_metrics=True,
+                      predict_speed=True):
   for metric in metrics:
     metric.reset()
 
@@ -206,7 +196,7 @@ def compute_summaries(metrics,
   # Get the evaluation metrics for pixor detection
   if pixor_metrics:
     print('Calculating detection evaluation metrics!')
-    pixor.get_eval_metrics(images, latents, model_net, 
+    pixor.get_eval_metrics(images, latents, model_net, predict_speed=predict_speed,
       pixor_size=pixor_size, ap_range=[0.1,0.3,0.5,0.7,0.9], filename='metrics')
   
   # Choose the first view episodes for visualization
@@ -331,6 +321,7 @@ def train_eval(
     reconstruct_names=['roadmap'],  # names for masks
     pixor_names=['vh_clas', 'vh_regr', 'pixor_state'],  # names for pixor outputs
     reconstruct_pixor_state=True,  # whether to reconstruct pixor_state
+    predict_speed=True,  # whether to predict speed
     extra_names=['state'],  # extra inputs
     obs_size=64,  # size of observation image
     pixor_size=64,  # size of pixor output image
@@ -394,8 +385,9 @@ def train_eval(
   with tf.summary.record_if(
       lambda: tf.math.equal(global_step % summary_interval, 0)):
     # Create Carla environment
-    py_env, eval_py_env = load_carla_env(env_name='carla-v0', lidar_bin=32/obs_size, pixor_size=pixor_size,
-      obs_channels=list(set(input_names+reconstruct_names+pixor_names+extra_names)), action_repeat=action_repeat)
+    py_env, eval_py_env = load_carla_env(env_name='carla-v0', lidar_bin=32/obs_size, 
+      pixor_size=pixor_size, obs_channels=list(set(input_names+reconstruct_names+pixor_names+extra_names)),
+      action_repeat=action_repeat, pixor_speed=predict_speed)
 
     tf_env = tf_py_environment.TFPyEnvironment(py_env)
     eval_tf_env = tf_py_environment.TFPyEnvironment(eval_py_env)
@@ -413,7 +405,8 @@ def train_eval(
       raise NotImplementedError
     model_net = model_network_ctor(
       input_names, reconstruct_names, obs_size=obs_size, pixor_size=pixor_size,
-      reconstruct_pixor_state=reconstruct_pixor_state, perception_weight=perception_weight)
+      reconstruct_pixor_state=reconstruct_pixor_state, predict_speed=predict_speed,
+      perception_weight=perception_weight)
 
     # Build the perception agent
     actor_network = state_based_heuristic_actor_network.StateBasedHeuristicActorNetwork(
@@ -481,7 +474,8 @@ def train_eval(
       model_net=model_net,
       fps=10,
       image_keys=['camera', 'lidar', 'roadmap'],
-      pixor_size=pixor_size)
+      pixor_size=pixor_size,
+      predict_speed=predict_speed)
 
     # Collect/restore data and train
     if training:
@@ -557,7 +551,8 @@ def train_eval(
             model_net=model_net,
             fps=10,
             image_keys=['camera', 'lidar', 'roadmap'],
-            pixor_size=pixor_size)
+            pixor_size=pixor_size,
+            predict_speed=predict_speed)
 
         # Save checkpoints
         global_step_val = global_step.numpy()

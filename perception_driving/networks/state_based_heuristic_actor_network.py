@@ -18,7 +18,8 @@ class StateBasedHeuristicActorNetwork(network.Network):
   def __init__(self,
                input_tensor_spec,
                output_tensor_spec,
-               desired_speed = 8,
+               desired_speed=8,
+               add_noise=False,
                name='StateBasedHeuristicActorNetwork'):
     """Creates an instance of `StateBasedHeuristicActorNetwork`.
     Args:
@@ -29,7 +30,6 @@ class StateBasedHeuristicActorNetwork(network.Network):
       desired_speed: The desired speed of the vehicle to track.
       name: A string representing name of the network.
     """
-
     super(StateBasedHeuristicActorNetwork, self).__init__(
         input_tensor_spec=input_tensor_spec,
         state_spec=(),
@@ -37,6 +37,13 @@ class StateBasedHeuristicActorNetwork(network.Network):
 
     self._output_tensor_spec = output_tensor_spec
     self._desired_speed = desired_speed
+    self._add_noise = add_noise
+
+    # if add_noise:
+    #   self._t = 0
+    #   self._noise_interval = 80
+    #   self._noise_duration = 10
+    #   self._noise_stddev = [1.0, 0.5]  # [acc, steer]
 
   def call(self, inputs, step_type=(), network_state=(), training=False):
     del step_type, training  # unused.
@@ -52,6 +59,13 @@ class StateBasedHeuristicActorNetwork(network.Network):
 
     accel_stop = - 8.0 * tf.ones_like(speed)
     accel = tf.where(front, accel_stop, accel)
+
+    # # Add action noise
+    # if self._add_noise:
+    #   if self._t%self._noise_interval < self._noise_duration:
+    #     accel += tf.random.normal(accel.shape, stddev=self._noise_stddev[0])
+    #     steer += tf.random.normal(steer.shape, stddev=self._noise_stddev[1])
+    #   self._t += 1
 
     actions = tf.transpose(tf.stack((accel, steer)))
 

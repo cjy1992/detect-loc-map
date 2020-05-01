@@ -1,10 +1,14 @@
-CUDA_VISIBLE_DEVICES=0 python train_eval.py \
+CUDA_VISIBLE_DEVICES=2 python train_eval.py \
   --root_dir logs \
-  --experiment_name e2e_perception \
+  --experiment_name e2e_perception_speed \
   --gin_file params.gin \
-  --gin_param load_carla_env.port=2000 \
+  --gin_param load_carla_env.port=3000 \
   --gin_param train_eval.model_batch_size=32 \
   --gin_param train_eval.obs_size=128 \
   --gin_param train_eval.pixor_size=128 \
-  --gin_param train_eval.sequence_length=10 
-  
+  --gin_param train_eval.sequence_length=10 \
+  --gin_param train_eval.training=True \
+  --gin_param train_eval.initial_collect_steps=50000 \
+  --gin_param load_carla_env.max_time_episode=300 \
+  --gin_param train_eval.num_eval_episodes=1 \
+  --gin_param train_eval.predict_speed=True
