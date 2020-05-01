@@ -21,7 +21,7 @@ $ conda activate env_name
 $ git clone https://github.com/cjy1992/detect-loc-map.git
 ```
 
-4. Enter the root folder of this repo and install the package:
+4. Enter the root folder of this repo and install the packages:
 ```
 $ pip install -r requirements.txt
 $ pip install -e .
