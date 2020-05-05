@@ -4,3 +4,5 @@ tensorflow-gpu==2.0.1
 tf-agents==0.3.0
 tensorflow-probability==0.8
 gym==0.12.5
+opencv-python==4.1.2.30
+shapely==1.7.0

@@ -48,7 +48,7 @@ It will then connect to the CARLA simulator, collect driving data, then train an
 3. Run `tensorboard --logdir logs` and open http://localhost:6006 to view training and evaluation information.
 
 ## Trouble Shootings
-1. If out of system memory, change the parameter ```replay_buffer_capacity``` and ```initial_collect_steps``` the function ```tran_eval``` smaller.
+1. If out of system memory, change the parameter ```replay_buffer_capacity``` and ```initial_collect_steps``` of the function ```tran_eval``` smaller.
 
 2. If out of CUDA memory, set parameter ```model_batch_size``` or ```sequence_length``` of the function ```tran_eval``` smaller.
 
